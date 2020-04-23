@@ -50,7 +50,11 @@ display_usage() {
 	echo ""
 	#Display interfaces
 	interfaces=$(ip -f inet -br addr show | grep -v 127.0.0.1 | sed  's/@.....//g')
-	echo -e "  ${YELLOW}$interfaces${RESET}"
+	echo "$interfaces" | while read -r line;  
+	do
+		echo -e "  ${YELLOW}$line${RESET}"
+
+	done
 	echo ""
 	} 
 

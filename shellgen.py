@@ -336,7 +336,7 @@ def main():
 	if options.list == True:
 		list()
 		
-	elif options.ip is None or options.shell is None and MSFINSTALLED == True:
+	elif options.ip is None or options.shell is None:
 		parser.print_help()
 		print("\n")
 		interfaces()

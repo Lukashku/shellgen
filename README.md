@@ -13,4 +13,3 @@ Some parts were inspired by msfpc https://github.com/g0tmi1k/msfpc
 
 ![](/assets/shellgenpy.png)
 
-Everything was not 100% tested, if there are any issues feel free to email me lukashku@protonmail.com
